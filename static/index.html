@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpeakSeek - Chat with your audio files</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 class="mt-4 text-center"><i class="fas fa-waveform-lines"></i> SpeakSeek</h1>
+            <p class="text-center lead">Upload an audio file and chat with its content</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section id="upload-section" class="my-5">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="card-title">Upload Audio</h2>
+                        
+                        <div id="drop-area" class="drop-area d-flex flex-column align-items-center justify-content-center">
+                            <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
+                            <p>Drag and drop audio file here or</p>
+                            <form id="upload-form" enctype="multipart/form-data">
+                                <div class="mb-3">
+                                    <input type="file" id="audio-file" name="file" accept=".mp3,.wav,.m4a,.flac,.ogg" class="form-control" required>
+                                </div>
+                                <div class="mb-3">
+                                    <input type="text" id="conversation-name" name="conversation_name" class="form-control" placeholder="Conversation name (e.g. Meeting June 18)" required>
+                                </div>
+                                <button type="submit" id="upload-button" class="btn btn-primary">Upload & Process</button>
+                            </form>
+                        </div>
+                        
+                        <div id="upload-progress" class="progress mt-3" style="display: none;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        
+                        <div id="upload-status" class="alert mt-3" style="display: none;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chat Section (initially hidden) -->
+            <section id="chat-section" class="my-5" style="display: none;">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h2 class="mb-0">Chat with <span id="conversation-title">your audio</span></h2>
+                        <button id="new-upload-btn" class="btn btn-sm btn-outline-secondary">New Upload</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="chat-messages" class="chat-container mb-3">
+                            <div class="system-message">
+                                Your audio has been processed. Ask me anything about its content!
+                            </div>
+                        </div>
+                        
+                        <form id="question-form">
+                            <div class="input-group">
+                                <input type="text" id="question-input" class="form-control" placeholder="Ask a question about the audio..." required>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="text-center text-muted my-4">
+            <p>SpeakSeek &copy; 2025 - Powered by Friendli AI</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

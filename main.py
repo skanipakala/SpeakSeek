@@ -3,6 +3,7 @@ import json
 import shutil
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from friendli_llm_api import FriendliLLMAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import uvicorn
@@ -24,7 +25,7 @@ app = FastAPI(title="SpeakSeek", description="Audio transcription and question a
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500", "*"],  # Allow the Live Server origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,8 +42,9 @@ async def read_root():
 # Configure OpenAI API
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Initialize the Friendli Whisper API client
-friendli_client = FriendliWhisperAPI()
+# Initialize API clients
+friendli_whisper_client = FriendliWhisperAPI()
+friendli_llm_client = FriendliLLMAPI()
 
 # Setup data directories
 UPLOAD_DIR = Path("./uploaded_audio")
@@ -192,7 +194,7 @@ async def upload_audio(
         print(f"File size: {os.path.getsize(audio_path)} bytes")
         
         # Transcribe using Friendli Whisper API
-        transcription_result = friendli_client.transcribe_audio(str(audio_path))
+        transcription_result = friendli_whisper_client.transcribe_audio(str(audio_path))
         
         # Extract transcript text
         if "text" in transcription_result:
@@ -273,17 +275,27 @@ async def ask_question(request: QuestionRequest):
         Please provide a concise and accurate answer based only on the information provided in the contexts.
         """
         
-        # Get answer from OpenAI
-        response = openai.chat.completions.create(
-            model="gpt-4",  # or another appropriate model
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that answers questions based on audio transcripts."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500
-        )
+        system_prompt = "You are a helpful assistant that answers questions based on audio transcripts. Only use information from the provided contexts to answer the question."
         
-        answer = response.choices[0].message.content
+        # Get answer from Friendli LLM API
+        try:
+            response = friendli_llm_client.generate_response(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_tokens=500,
+                temperature=0.7
+            )
+            
+            # Extract the answer from the response
+            if response and "choices" in response and len(response["choices"]) > 0:
+                answer = response["choices"][0]["message"]["content"]
+            else:
+                answer = "I couldn't generate a proper response based on the available information."
+                print(f"Unexpected response structure: {response}")
+        except Exception as e:
+            print(f"Error calling Friendli LLM API: {str(e)}")
+            # Fallback to a simple answer based on the contexts
+            answer = f"Based on the transcript, I found these relevant sections but couldn't process them further:\n\n{context_str}"
         
         return {
             "answer": answer,
