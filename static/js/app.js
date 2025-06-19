@@ -21,7 +21,7 @@ const questionInput = document.getElementById('question-input');
 const newUploadBtn = document.getElementById('new-upload-btn');
 
 // API endpoints - using absolute URLs with port 8000 for FastAPI
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'http://127.0.0.1:8001';
 const UPLOAD_ENDPOINT = `${API_BASE_URL}/upload-audio`;
 const QUESTION_ENDPOINT = `${API_BASE_URL}/ask-question`;
 

@@ -1,0 +1,800 @@
+00:00:00,179 --> 00:00:03,059 [Speaker 0]
+Who's used Spark here before? 
+
+00:00:03,059 --> 00:00:05,299 [Speaker 0]
+Okay. Feel the pain of the JVM. 
+
+00:00:05,299 --> 00:00:05,639 [Speaker 1]
+[laughs] 
+
+00:00:05,639 --> 00:04:00,019 [Speaker 0]
+Um, and then who's used Pandas? I- I'm sure Pandas, right? Yeah, okay, there we go. So you're gonna see a lot of similarities in the pains of working with multimodal data, whether you're working with Pandas and Spark. In the first place, how do you even put an image into a dataframe, right? So what we're gonna do is we're gonna download data from, say, at this point, 10,000 URLs, let's say. Uh, the second thing we'll do is we'll decode all that bytes coming in as JPEG images and try to get images. And the last thing is we'll convert them to tensors, and then we'll run them on a model. Very simple workload. This should be easy, right? Well, first thing you do in Spark is you do.repartition. Um, the reason you have to do this is because usually when you work with numbers, and you know, analytics, and like Pandas, you're usually going for like s- s- big-ish data, say a couple of hundred gigabytes to a very small amount of data, where you're running aggregations. You're like kind of like doing like sum, mean, group by. Um, but when you work with multimodal data, often this stuff expands. The first thing I'm gonna do on this is download a whole bunch of URLs, right? If I have 10,000 URLs in a, like 1 megabyte Pandas dataframe, and I download all the URLs, it's gonna explode. And so what I need to do is I need to chunk it. I need to tell Pandas, "Hey, like yes, chunk this into small chunks of 200s." Otherwise, you're gonna get the nasty ooms. Um, very familiar to anyone who's worked with multimodal data at scale is that, you know, 10, uh, a thousand integers is very different from a thousand images, right? There's a lot of overhead that goes into thinking about this. The second thing you want to do is you then want to run, you know, this downloading functionality. Download from these 10,000 URLs and then decode them as images, right? And in most code, you probably just write your own Python code to do this. Um, that's pretty nasty because most engines, if you've ever used like a SQL database, they'll give you the operations like add numbers together, calculate a mean, calculate a hash. That's all built into the engine. But when you work with multimodal data and AI tools, you're bringing your own functions, right? And most engines don't do this very effectively, especially if you try to do this l- at large scale in a distributed setting. And what that means is that the, the tool you need looks a lot less like a database, a lot more like a web app because, you know, uh, both agents and humans are very bad at writing code. And now Code fails all the time, and you will fail the entire pipeline. Lastly, 'cause the last thing you wanna do, you probably wanna run a model on it, right? And this involves, you know, oftentimes, um, if you're running just purely tabular workloads, if it's just numbers, you're probably just adding numbers together without any external dependencies. But if you're working with multimodal data and AI, you're usually calling out to some external service, right? Like who has the time to like write your own like GPU-based thing? Um, so you're calling out to OpenAI and you're looping like a million times. And then now all of a sudden you find yourself trying to optimize this workload, which is terrible. And yeah, so you have all kinds of external dependencies. OpenAI is going to start throttling you, and it's gonna start throwing 503s. And if you don't handle that well, sorry, all the work you just did will disappear. Um, and that's why we're building Daft really with this idea that working with multimodal data should be as simple as working with tabular data, like why is that not the case? Um, and some, a s- couple of the core primitives we've built into Daft, so here's an example. We'll do some demos later. Uh, but yeah, you can read from common tables and like CSVs and Parquet and JSON just as you would with Pandas, let's say. Uh, and then we baked into Daft actually this idea of like columns can just be images, right? And so if you need to download data from URLs, you just call my columns URL.urldownload that gives you a new column that's bytes, and then.image.decode that gives you a new column that's images. And it's that simple. All of a sudden you don't have to write your own like multi-threading, uh, async I-O and try to make this all work. Under the hood, Daft does this all in async rust for you. 
+
+00:04:00,019 --> 00:06:23,115 [Speaker 0]
+And when you do have to work with external resources like GPUs or, uh, with things like OpenAI endpoints, uh, or with your favorite element provider, plunk it in. Um, Daft actually understands this and builds a plan for you and understands that like okay, like this, you know, this Python function you're trying to run should just run as a, its entire own step, right? And we don't treat it as if it's a addition operation, which is what all other engines will pretend it is. And it doesn't have any insight into how, how many things should it run in parallel? How hard should it be hammering your endpoint? All that fun stuff. So under the hood, what, this is how Daft itself works. Depending on the operations you're trying to run on the engine, it will dynamically size the amount of data it's trying to process, right? So as you are reading data in, we read data at a certain chunk size and then at certain points, for example, a join, we might go like, okay, like I can have bigger chunk sizes. But if you're trying to do URL downloads and you're expanding potentially your data by like a thousand or 10,000 times from like URLs to like images, that's where Daft will intelligently kind of make the data a lot smaller. And we do this all in kind of this streamline, uh, uh, streaming execution, which gives you essentially the illusion that like everything is just running perfectly without you having to think about data sizing, memory, uh, and kind of parallelism. Uh, we also have a very Python-first development experience. We'll show that in a bit. And of course, a lot of resource-aware scheduling so you don't have to think about it. If you're trying to run a URL download, you want that to run in parallel with all of your other like computations, Daft does that automatically. So it's demo time. Enough talking. Um, we're gonna do a very simple demo. All the code will also be available on like GitHub Gists. So feel free to, you know, pop by the booth at the back and ask if you need access to the code. Uh, but yeah, we'll do a very similar to demo to what we saw from before. First I'm gonna... You can install Daft with pip install daft, just like you would any normal package. It's all kind of packed into one little, uh, binary, which is nice. And you, yeah, just import Daft as the first step.Um, first thing I'm gonna do is I'm gonna create, uh, some... this is actually my Hugging Face API tokens. So we're gonna try to read a Hugging Face data set. And in Daft, it's very simple. You just say, "Daft, read parquet," because under the hood all Hugging Face data sets are actually parquet. Uh, and you just pass in this hf:// 
+
+00:06:23,115 --> 00:08:28,375 [Speaker 0]
+and Daft will understand, like, the path to the Hugging Face data set. And voila, we now have a Hugging Face data set. This is the LAION data set. It's the smaller one, 400 million. Um, and I'm just showing the first few rows. This is what the LAION data set looks like. Who's familiar with LAION, uh, the image data set? Oh, I guess it's old school or old news now. Okay. This was the image data set back [laughs] in the day. Um, and really super simple, right? You have a column full of URLs. Notice how these are all, like, jank and pointing up to some potentially broken URL out in the wild. And then it has captions for those images and similarity scores. So typically, without Daft, you're like, "Oh, what do I do now? I'll probably write my own Python code and, like, for loop over it." But no, let's not do that. Let's simply run url download img-decode, and we can convert all of these images to the same RGB mode all in one line of code. Um, and we're just gonna be able to download data from these URLs without writing any code yourself. And all this runs, again, under the hood, async Rust, uh, which makes it super, super fast. There we go. So yeah, simply with that, now we can see some- some of these URLs are pretty nasty. Like this one, for example, if I try to access this manually, this, I believe, is not even an image. I don't know what this is. Yeah, it's like kinda... ah, I see. It has no, you know... there we go. Yeah, so that's why I didn't actually get it. But, you know, this is the easiest way to just go from, like, 400 million images down to, uh, the actual image bytes and into image representation. And then lastly, yeah, let's try running an LLM. I wrote a simple kind of system prompt here. It's like, "You are an AI assistant. You should score the captions," right? Some of these captions are pretty terrible. So score the captions and come up with a better caption, essentially. So I have a bunch of code in here. Again, uh, feel free to approach us in the back to see how this code is written. But essentially what that code defines is this little score caption function. And I can just simply apply score caption on top of the caption column and the image column. And let's run this. 
+
+00:08:28,375 --> 00:08:42,275 [Speaker 0]
+And now it's gonna hit, uh, OpenAI. I've kind of provisioned it with an OpenAI client. Uh, but feel free to plug in your own inference provider of choice. And after a couple of seconds, it should be running these against 
+
+00:08:42,275 --> 00:08:53,775 [Speaker 0]
+the endpoint. There we go. So now we have some new columns. We have a clean caption column compared to the old caption. It's quite obviously a lot better. Um, let's see. Let's see some fun ones. 
+
+00:08:53,775 --> 00:08:54,275 [Speaker 2]
+[cheering] [clapping] 
+
+00:08:54,275 --> 00:08:58,275 [Speaker 0]
+Oh, thank you, thank you, thank you. Yeah, yeah. 
+
+00:08:58,275 --> 00:09:29,515 [Speaker 0]
+So here we go. Uh, um, I used to play this game actually, Final Fantasy XIII. Um, so the- the old, the old caption was just, "Lightning returns. Final Fantasy XIII box art." The new one actually says a whole bunch of stuff, uh, "Featuring a black background with the game's logo title." So it's a lot more, you know, there's a lot more rich content in there that the- the model came up with. And also it's able to score stuff. So this one, for example, has a 0.4 score for the old, uh, caption. It was, "Our hearts bust and pop," something, something. Um, 
+
+00:09:29,515 --> 00:10:06,375 [Speaker 0]
+it doesn't actually say that it's a- it's a- it's a album cover. And so the new one says, you know, "Album cover," and that's why I think the model said it was 0.4. So that was kind of like super simple data processing with Daft, right? Imagine you have this big image data set and you gotta do something with it. And then now what I'll do is I'll just simply run the entire thing, write it out to a file, uh, and then now you have a clean data set all of a sudden. And you can go ahead and hack away, and win the big prizes at the end of the night. Um, if- if you need to, uh, if you want to just drop down to PyTorch, you're like, "I hate all this dataframe stuff and I just want PyTorch. Give me PyTorch." Cool. I'll just- I'll just hit this real quick. 
+
+00:10:06,375 --> 00:10:07,335 [Speaker 2]
+[laughs] 
+
+00:10:07,335 --> 00:10:11,795 [Speaker 0]
+Um, one, two, three, 
+
+00:10:11,795 --> 00:10:21,255 [Speaker 0]
+four, five. There we go. Um, so yeah, it's just, it's just gonna return you PyTorch, uh, essentially. And feel free to approach us in the back. We'll give you PyTorch. You can run stuff on GPUs, um, if you want to. And 
+
+00:10:21,255 --> 00:10:21,995 [Speaker 3]
+[laughs] 
+
+00:10:21,995 --> 00:10:27,675 [Speaker 0]
+And -we are hiring. So let us know if you're interested in working on any of the system stuff. 
+
+00:10:27,675 --> 00:10:29,715 [Speaker 0]
+Perfect. Thank you. 
+
+00:10:29,715 --> 00:10:30,735 [Speaker 4]
+Everyone, give it up for Jay. 
+
+00:10:30,735 --> 00:10:34,475 [Speaker 2]
+[clapping] 
+
+00:10:34,475 --> 00:10:37,375 [Speaker 4]
+Okay, next up we have Kevin 
+
+00:10:37,375 --> 00:10:40,095 [Speaker 4]
+from Hypermode. How's it going, man? It's good to see you. 
+
+00:10:40,095 --> 00:10:41,715 [Speaker 2]
+[clapping] 
+
+00:10:41,715 --> 00:10:46,875 [Speaker 4]
+Everyone, g- give a round of welcome to Kevin. 
+
+00:10:46,875 --> 00:10:48,095 [Speaker 4]
+Getting into the office seats? 
+
+00:10:48,095 --> 00:10:48,235 [Speaker 5]
+Yeah. 
+
+00:10:48,235 --> 00:10:51,415 [Speaker 4]
+Great. Yeah. 
+
+00:10:51,415 --> 00:10:52,095 [Speaker 6]
+Oh, wow, 
+
+00:10:52,095 --> 00:10:55,615 [Speaker 7]
+...　 
+
+00:10:55,615 --> 00:10:57,315 [Speaker 8]
+At least he followed the dress code. 
+
+00:10:57,315 --> 00:10:57,775 [Speaker 9]
+I'm not. 
+
+00:10:57,775 --> 00:10:59,455 [Speaker 7]
+Yeah, right? Everyone all black, right? 
+
+00:10:59,455 --> 00:11:00,775 [Speaker 9]
+That's true. Yeah, yeah. [laughs] 
+
+00:11:00,775 --> 00:11:36,815 [Speaker 7]
+Yeah. Hey guys, I'm Kevin. Uh, I used to be the CEO of Vercel. I left maybe 18 months ago and work on agent infrastructure. And fundamentally, AI-assisted people suck at building agents. They're not good at it. Um, and actually, how many of you are responsible for building, like, "AI," strong air quotes, at your company right now? Almost no one. I'm... Okay. So, the- the version of hell that I watch a lot of my customers go through is CEO comes down. They say, "Hey, we do AI now." And whoever, you know, the AI, you know, platform team, the AI center of excellence team, 
+
+00:11:36,815 --> 00:12:16,864 [Speaker 7]
+they go out and start doing lunch and learns with all the different business units. And they say, "Hey, what do you do here?" Bob from sales tries to explain to you Med pic, BANT, all these crazy opportunity fields, and you go back. You- you try and build them an agent. And you spend lots of time and pain figuring out the embedding models. You figure out all the right infrastructure. You come back and you deliver Bob an agent, and he says, "You missed all the nuance of my job. When I said 'budget,' I didn't really mean budget. I meant, like, the allocated resources." And so you live in this, like, endless pit.... because you're playing telephone between essentially the agent who has to do the job 
+
+00:12:16,864 --> 00:13:57,764 [Speaker 7]
+and the person who actually knows how the job works. And so my, my proffer to you all is [coughing] as people are responsible for building agents is our job should not actually be the instructions, the prompting and the evaluation of those agents. Yes, look for an embedded agent maybe, but our role as platform makers should actually be, "How do I help that person who knows the job best succeed?" And what that normally looks like is I'm responsible for MCP servers, I'm responsible for connections, I'm responsible for making sure the infrastructure doesn't tip over as a Ddos or database because, uh, you know, one of our su- uh, uh, our Python library who's managing connections doesn't do pooling. And instead he wanted Bob to build as their agent, or for you all, you could build your own agents. And that works great, but eventually, um, if anyone has to use like Web Flow or any of these like whizzy-wig website builders, we saw this a lot back at Vercel where some marketing team, logo team would build a beautiful website. But someday you wanna do something a little bit different that wasn't in the whizzy-wig tool. And you ha- if you didn't have an escape hatch, you'd come to us and you'd rewrite it in Xjs. But having learned that lesson, at Hypermode our expectation is you are gonna build an agent or an expert's gonna build an agent with no code. And at some point they're gonna inject that to a bunch of going code, type script code. And then we can custom make it like normal software. I can put it through my normal software development life cycle. I can make sure that it has the right permissions and accesses, et cetera. And I manage all the scaling infrastructure like a normal microservice. Um, actually if you guys look way back on the Hypermode side, we used to call them AI microservices before, you know, agents were a thing and improved evaluations a lot. 
+
+00:13:57,764 --> 00:14:34,383 [Speaker 7]
+And so today we're actually just build a couple of agents real quick. And also this is like nightmare fuel of an image you can stare at, you know, Colin Mochrie for a little bit. Um, and so what we're gonna do is we're gonna, we're gonna build an agent live together. I'll give you a quick tour of like how the thing works. Um, if you scan this with your phone or go to, um, hype.foo/hacknight, it'll drop you off in a Notion doc that has a bunch of instructions, but talking's more fun. Um, though doing demos with one hand is, is, is, is a bit complicated. Um, so you end up on a screen like this. You'll sign up, um, Hypermode al- command plus plus. 
+
+00:14:34,383 --> 00:14:34,704 [Speaker 10]
+What is it? 
+
+00:14:34,704 --> 00:14:36,043 [Speaker 7]
+Ah, it's okay. I'll- 
+
+00:14:36,043 --> 00:14:36,943 [Speaker 10]
+Erase the page. 
+
+00:14:36,943 --> 00:14:41,743 [Speaker 7]
+Yeah, we'll try. Um, you'll end up creating a workspace. Um, 
+
+00:14:41,743 --> 00:14:47,343 [Speaker 7]
+get, and then you'll be asked to enter the code. 
+
+00:14:47,343 --> 00:15:12,163 [Speaker 7]
+Um, this specifically gives you, um, a month of Hypermode free. It gives access to like 3D models, bunch of embedding stores, all sorts of fun stuff. Um, it is on the doc. You'll end up building a team. I won't do that now. I'll do the, for the effort of brevity, um, I'll just skip ahead. You'll be dropped off into something that looks kinda like this. Uh, so again, the assumption here is 
+
+00:15:12,163 --> 00:15:17,443 [Speaker 7]
+you want to build something cool. And does anyone actually have an idea for a cool agent we could build live? 
+
+00:15:17,443 --> 00:15:19,863 [Speaker 7]
+Seriously, it can be anything. 
+
+00:15:19,863 --> 00:15:21,363 [Speaker 7]
+Toaster debugger. Okay, what do we got? 
+
+00:15:21,363 --> 00:15:22,803 [Speaker 10]
+A personality test. 
+
+00:15:22,803 --> 00:15:37,603 [Speaker 7]
+Personalities. Okay. Um, so I'll go into my, my handy dandy Hypermode concierge. Um, I'm gonna put this down briefly. 
+
+00:15:37,603 --> 00:15:59,263 [Speaker 7]
+And so what's gonna happen here is... So under the covers, what Hypermodes do is try to construct essentially a Modus application. Um, there's open source, uh, agent runtime. And basically what it ends up doing is trying to construct an application for you. And then essentially it'll spit it out and you can just run against it. Um, and so I'll, I'll briefly sprint through. 
+
+00:15:59,263 --> 00:16:01,923 [Speaker 7]
+Five, I don't know what that is. 
+
+00:16:01,923 --> 00:16:03,983 [Speaker 7]
+Super 
+
+00:16:03,983 --> 00:16:12,163 [Speaker 7]
+quick summaries. Typing is hard. Um, and it's for 
+
+00:16:12,163 --> 00:16:17,163 [Speaker 11]
+Everything. 
+
+00:16:17,163 --> 00:16:28,023 [Speaker 7]
+And once Hypermode feels confident it knows enough about what I'm trying to build, it'll pick out a model for me. It'll wire connections for me. And, um, we'll just tell it to go ahead and build. 
+
+00:16:28,023 --> 00:16:30,283 [Speaker 7]
+Just go for it. 
+
+00:16:30,283 --> 00:16:30,663 [Speaker 7]
+Build 
+
+00:16:30,663 --> 00:16:35,223 [Speaker 12]
+Name 
+
+00:16:35,223 --> 00:16:37,423 [Speaker 12]
+is Bob. 
+
+00:16:37,423 --> 00:17:06,163 [Speaker 7]
+And so again, for brevity, I will, I'll skip. So right now we're kicking off tool. It's created Bob. Bob's now a personality test agent. And so hi- Hypermode includes 2000 MCP servers. Um, we use a, a pair of tools called Arcade and one we call Pipedream. Um, you can oooff into any of these services you have access to. Um, and I might, you know, I, I don't know if, if I'm gonna have a, I'm gonna have Bob try and give me a big five personalization based on my GitHub commit history. Um, so we'll see, see how that goes. 
+
+00:17:06,163 --> 00:17:06,243 [Speaker 10]
+Okay. 
+
+00:17:06,243 --> 00:17:19,683 [Speaker 7]
+Um, over time, your agents will generate memories you store us all in a knowledge graph. Um, you can curate and management. Also, if you don't know what a knowledge graph is, you never have to care. All it is is like this really dense chunk of context that is accessible to your agent, you can share it across agents. Um, you can also 
+
+00:17:19,683 --> 00:17:19,883 [Speaker 13]
+Hey, Bob. 
+
+00:17:19,883 --> 00:17:49,043 [Speaker 7]
+... create a new open source project called Deep Graph if you wanna build a really big knowledge graph. But for now, it's just memories. It's helpful. Um, and then over here, again, if you are a expert AI person, you actually come in here and, and by instructions, this is our system prompt. Uh, my assumption is that m- AI is better at writing system prompts than I am. But if there's a specific set of behaviors you need to instantiate, go for it. Um, then over here you have a whole bunch of models to, to paint and test. Um, these are all run through Hypermodes, um, 
+
+00:17:49,043 --> 00:18:01,583 [Speaker 7]
+uh, model proxy. But again, you can hook it up to Bedrock if you guys are using a different service. We don't care. We just make it real easy. Um, save Bob, and then I'll ask him to do some work for me. 
+
+00:18:01,583 --> 00:20:07,099 [Speaker 7]
+All right. Bob, don't let me down. GitHub keeps going down today, which is gonna be really fun.I'm very curious to see what comes back. [laughing] Um, while, while Bob thinks, I'll, I'll show you guys a couple of... Oh, Bob. I gave you access to GitHub, didn't I? I did. Do better. Um, this is actually kind of expected behavior we see with a lot of agents we build. Normally they show up, they have a triple PhD but they're dumber than a can of soup. [laughing] And a lot of what we're doing is trying to teach the agent how to do something. Check my time. About a minute and a half. I won't show you how to train an agent right now. I'll show you what it looks like at the end. But basically you're gonna fight with Bob for like 20 minutes. I'm like, "Bob, go look at my GitHub. Bob, don't read those commits, those aren't my commits. Bobs, my commits are over here. Hey, don't worry about tabs and spaces, that's not an important version of my personality." You're gonna battle with this agent and eventually you're gonna teach him to do something useful to you. And what you're gonna do is you're gonna come and create a task. Task can be run on a schedule, on a web hook, as a reaction to other agents. Um, lots of things that multi-agent systems is like, I'm spanning things down from like, "Hey, once you've created some asset for me, pass it as the next per- portion of the pipeline." Um, and so for example, here's a version of this where, um, I trained Hagrid how to check the weather and decide whether or not we're gonna cut any farms. Best farmer in my house that doesn't exist. Um, if it should stay open or closed. Um, I uploaded a bunch of weather reports into Notion and essentially our farm plan of like we're gonna cut canes and, you know, dry breaks, whatever. Um, and basically it goes out and reaches out for the GitHub MCP server, picks out a tool, um, goes and gets file contents, creates a branch for me, and then goes up and saying, "Hey, great, Kev. I'm gonna create you a nice little, little preview deployment." Oh, please be alive. Yep. And it says the farm's gonna be closed 'cause it's gonna be stormy. That's cool, but, you know, I'm lazy. I don't want to have to train Hagrid how to do... or sorry, Grapevine how to do this every time. I can create a task. [bell dinging] One minute to go. 
+
+00:20:07,099 --> 00:20:49,499 [Speaker 7]
+And basically what all this is doing is summarizing all the work that I've done with Hagrid or, uh, Grapevine in this, in this situation, turn it into a one shot set of instructions, bu- buttoning it up with a bunch of memory. And then I can work against it and say, "Hey, Hagrid, do this every Monday morning," or, "Do this every, every so often." Um, and then when I pull into Hag- to... I keep naming my demo different things. Um, Grapevine, um, I see these like, uh, essentially these, these triggers to, to, to run that same one-shot, uh, prompt. It'll go and run that task for me and do it. Let's say that's going really, really well and I wanna actually, like, go and, like, look at the code. Um, I can export this all to code. [object thudding] 
+
+00:20:49,499 --> 00:21:09,099 [Speaker 7]
+And what's happening is basically Hypermode is, like, uncoupling the... essentially the, the portion of the Modus app that we wrote for you. We're cloning it into my GitHub account and then essentially we're hosting as a serverless function for you, and you can manage it just like any other chunk of code. And so that looks like this over here. [audience applauding] Crushing it just in time. 
+
+00:21:09,099 --> 00:21:17,299 [Speaker 14]
+That was awesome. 
+
+00:21:17,299 --> 00:21:21,339 [Speaker 14]
+I guess someone will get their personality today from Bob. 
+
+00:21:21,339 --> 00:21:21,659 [Speaker 7]
+Yes. 
+
+00:21:21,659 --> 00:21:27,299 [Speaker 14]
+For sure. Uh, now l- let's invite Adam from Weaviate to give his talk. 
+
+00:21:27,299 --> 00:21:34,939 [Speaker 7]
+Oh shit, um... [audience applauding] Thanks, Vishal. 
+
+00:21:34,939 --> 00:21:49,299 [Speaker 7]
+Okay. 
+
+00:21:49,299 --> 00:21:56,439 [Speaker 7]
+Uh, let me get to these slides for real. 
+
+00:21:56,439 --> 00:22:10,319 [Speaker 7]
+Cool. How's everyone doing today? Good? Good energy in the room? Right on. Okay. So, um, before we get started, I wanna get to know you a little better. Uh, any designers in the room? Any 
+
+00:22:10,319 --> 00:22:12,699 [Speaker 7]
+product managers in the room? 
+
+00:22:12,699 --> 00:22:15,479 [Speaker 7]
+Oh, damn. Any developers in the room? 
+
+00:22:15,479 --> 00:22:34,639 [Speaker 7]
+Okay. We have a room full of developers. That's actually really nice. Uh, it's good to be amongst friends [laughs]. Not to say the other roles aren't friends, uh, just I have a stronger connection with developers. So, um, Weaviate is an AI native vector database. Who's heard of Weaviate before? 
+
+00:22:34,639 --> 00:22:40,359 [Speaker 7]
+Fantastic. And, um, who's like used a vector database? 
+
+00:22:40,359 --> 00:22:47,479 [Speaker 7]
+Many of you? Okay, cool. Uh, and of those who have never, put your hand up if you've never used a vector database before. 
+
+00:22:47,479 --> 00:22:49,279 [Speaker 7]
+Okay. 
+
+00:22:49,279 --> 00:23:17,119 [Speaker 7]
+Um, put your hands down or keep... Put your hands back up if you don't know what a vector database is. Okay. Almost everyone knows but a handful, so I'll go through this quickly. The idea of vector databases is the problem of search. We- with, with Weaviate we can basically enable search on the web in a much more easy API experience. But before we really get into what Weaviate and how Weaviate can solve that for you, what I'm really curious about is 
+
+00:23:17,119 --> 00:23:43,559 [Speaker 7]
+the idea of search in general. Everything we do on the internet is search, whether you're on Spotify, or on IMDb, Amazon, Wikipedia. This all, this whole experience first starts with a search. And even when you order coffee, this is basically a very simple search system and this simple search system uses some input from the world and we're able to say like, "Oh, I get the thing that they have to offer and I want that espresso." That's a search problem at the end of the day. 
+
+00:23:43,559 --> 00:23:48,879 [Speaker 7]
+And so everything we do, even from the apps that we build, is search based. 
+
+00:23:48,879 --> 00:23:58,739 [Speaker 7]
+And when you talk about search, it's basically the problem of knowledge management. And Google actually solved this and we're all really familiar with this because we all used Google at some point in the past. 
+
+00:23:58,739 --> 00:23:59,159 [Speaker 14]
+Yeah. 
+
+00:23:59,159 --> 00:24:32,079 [Speaker 7]
+And some point in the future if I ask this question, that question might have a different answer. But right now we all know what Google and Google search is. Google basically made this possible through a very complex algorithm that involved page rank and that involved, um, multi-layered analysis over lots of data. Part of it is vector search as well, but it's not democratized. And so we have open source vector databases today and AI tools today that involve vector embeddings, vector queries, that basically democratize this entire problem space and make it really easy for you to implement search systems into your applications.
+
+00:24:33,083 --> 00:24:58,983 [Speaker 15]
+So if we have search, what is, like what is the problem? Let's take a look at keyword search which is the, which is built off best match 25. Um, you search for whatever place fly, and you'll get a res- a response that looks like this. Why you should fly with Air- Expensive Airs airplanes. Based on keyword search, BM25, this query satisfies the answer. However it's not the answer we're looking for. 
+
+00:24:58,983 --> 00:26:18,903 [Speaker 15]
+And so this is one of the key problems with traditional search. We can get over this with tools like vector databases. Let's take a look at this meme. I bring sort of a bad response vibe to your searches. Yeah, that's, that's BM25. And if you implement semantic search, we can find things like air, why do airplanes fly, here's a physics explanation as to why things, uh, why things work the way that they do. And so basically with the power of semantic search, we have this whole dynamic in the world. And, uh, yeah. Good meme. So how does this work under the hood? And then models are effectively a type of machine learning model and the delta that we have is that instead of producing the next most probable token, like most language models do, the delta here is that the output is a set of numbers that represents your data semantically. And so you put in the word motorcycle, and you put in the word car, and the word vehicle. And then you put in the words strawberry, pear, banana, mango, you're gonna create two separate clusters because from the embedding models perspective, the vehicles, the motor- the motorcycle and the car will fit into one area in vector space, and the fruits will fit into another. And we can basically take advantage of this property of the proximity between these vectors is effectively the similarity between them. So the closer these objects are to one another, the more similar they are semantically. 
+
+00:26:18,903 --> 00:26:30,763 [Speaker 15]
+These numbers effectively capture meaning. And there's tons of vectorizers and vector providers out there. Uh, who's, like has anyone, who's seen a vector before? Who hasn't seen a vector before? 
+
+00:26:30,763 --> 00:26:46,323 [Speaker 15]
+Who has not seen a vector before from, uh, from like some other... okay, cool. Uh, I'm, I'm gonna pull this one up real quick. [computer keyboard clicking] 
+
+00:26:46,323 --> 00:26:54,423 [Speaker 15]
+So locally I have a LLaMA running, and I have mixed bread AI embed large model. If you plot LLaL, 
+
+00:26:54,423 --> 00:26:58,763 [Speaker 15]
+you'll get this number. And if you prot- if you plot 
+
+00:26:58,763 --> 00:27:44,863 [Speaker 15]
+LMaO, you'll also, you'll get another vector. I guarantee you if you were to plot this in vector space and then do another vecto- uh, vector for the word motorcycle, these vectors between LLaL and LMaO will be very different between LLaL and motorcycle. Okay. Uh, so yeah, you can generate models, you can run these models locally just like you run embedding models as well. Okay, um, jumping ahead, I wanna look at some new tools that we have. Uh, but just worth mentioning, we support multi-dimensional vectors. We also support multiple embedding vectors, uh, within the same data, uh, space as well. There's all sorts of stuff you could build from health search. Maybe I can find this quickly. [computer keyboard clicking] 
+
+00:27:44,863 --> 00:27:46,583 [Speaker 16]
+Health search views. 
+
+00:27:46,583 --> 00:27:56,123 [Speaker 15]
+Let's see if this shows up. Nice. Okay. Here's an example. This tool scrapes all of these Amazon res- uh, reviews over, um, 
+
+00:27:56,123 --> 00:28:36,243 [Speaker 15]
+like health-related products. And the step before the vector query is we actually break down this query here using natural language. By using Spacey to break down this natural language query and then from there we identify this key things that the user is asking for, the key intent. And then we do the queries based on the specific intent. So... "I have horrible back pain." You'll see the first step is actually breaking down this using Spacey. Oh, okay, we haven't updated the API key in a while. So, um, you can create a whole pipeline behind this. Uh, I'll show you another one. Let's see if my API key here works. 
+
+00:28:36,243 --> 00:28:48,663 [Speaker 15]
+Here's a more traditional search. Uh, the data set in here is, I'd like to say pre-2007, but I think someone, I think Michelle had previously mentioned that there was 2009 data in here. 2020- 
+
+00:28:48,663 --> 00:28:48,963 [Speaker 16]
+23 
+
+00:28:48,963 --> 00:29:26,803 [Speaker 15]
+3? Oh, that's really recent. Uh, okay. Regardless, there's not a lot of books on the word leetcode. Uh, not a lot of books have the word leetcode but maybe Cracking the Coding Interview might write- say it. But, um, because of this we can do a query for something like leetcode and what we'll find is that the embedding model understands the word leetcode but we don't necessarily need to have words in there, in the books, that have the word leetcode in it. But through semantic relevance we can find all of these programming related books. So this one is called Code. Uh, One is the Loneliest Number, has something to do with numbers. Um, God Created the Integers, C++ Programming, uh, let's see what else. 
+
+00:29:26,803 --> 00:30:16,003 [Speaker 15]
+And we get further and further away. So I'm not, I am sorting these roughly based on, uh, less and less, less and less relation to programming. But the first set of n- things here have something to do closer with code and programming. Okay. Um, let's jump down. Wiki integrates deeply into the entire AI native ecosystem from like orchestrators to e- language model providers and inferencers. Uh, FriendlyAI's here today. We have integrations with Friendly where basically all you need to do is set up a text to vec, um, integration on, sorry, uh, using the generative search module with Wiki so that you can just send in a query and your query will find your results from the data set and then we'll forward it down to the Friendly inference endpoint for you to get some response out of. So we integrate directly into all huge part of the ecosystem. 
+
+00:30:16,003 --> 00:30:29,403 [Speaker 15]
+Okay, so we're familiar with this general idea that LMs are kind of this passive mechanism that give us the, a way to get information. There's a knowledge cutoff. RAG helps with the knowledge cutoff. 
+
+00:30:29,403 --> 00:30:31,603 [Speaker 15]
+Click. Here we go. 
+
+00:30:31,603 --> 00:30:39,123 [Speaker 15]
+What we have now, we've moved towards like AI workflows where we can analyze this data. And this is an example of wh- how we're using Wiki to surface responses.
+
+00:30:39,587 --> 00:30:39,647 [Speaker 17]
+[cheering] 
+
+00:30:39,647 --> 00:32:09,028 [Speaker 15]
+At the moment, when you give developer feedback into Hacker Squad, it goes through a categorization agent where we find out is it a question, a note, a feature request, or a bug report. And we manage these responses differently. So if it's a question, we'll go look up your docs to find something that's relevant to the query that you have. And if we can find a good answer, we'll surface it back to you through the language model's response. [ding] If it's a issue or a feature request, we basically find the... an existing data issue, or we, if it doesn't exist, we'll create a new one and send it back to you. So, the whole hope here is to, like, create tools that make it easier for you to build as developers. So this is where we are going with AI tools now. And even further forward, we have AI agents that basically make it possible for your agent, agentic system, to have access to long-term memory, short-term memory, have access to a whole set of tools from GitHub to Slack to anything under the sun. And it allows you to build really, really comprehensive applications. And what I wanted to show off quickly was this idea of the Weaviate query agent. It's built right into Weaviate Cloud. All you have to do is store data into your Weaviate instance, uh, as vectors and you can interact with your, with your data just through natural language. The Weaviate query agent will effectively look at your query and figure what the best way is in order to represent the data and, uh, as a query, and then from there, do your query for you. [cheering] Everything comes out at the end of the string. That's it. I hope to build with the Weaviate query agent. [clapping] And, uh, yeah, I hope you enjoyed the rest of the talks. Thanks. 
+
+00:32:09,028 --> 00:32:26,147 [Speaker 17]
+[cheering] Now we will call Priyan from Arize to hi- give his lightning talk. [clapping] 
+
+00:32:26,147 --> 00:32:26,707 [Speaker 18]
+Thank you so much. 
+
+00:32:26,707 --> 00:32:28,267 [Speaker 17]
+[footsteps shuffling] 15 seconds. 
+
+00:32:28,267 --> 00:32:28,508 [Speaker 19]
+This break is doing it. 
+
+00:32:28,508 --> 00:32:28,528 [Speaker 18]
+Yeah, I see this one. 
+
+00:32:28,528 --> 00:32:28,767 [Speaker 19]
+So many colors. Where are you going? 
+
+00:32:28,767 --> 00:32:28,787 [Speaker 18]
+I don't know. 
+
+00:32:28,787 --> 00:32:28,828 [Speaker 19]
+You? 
+
+00:32:28,828 --> 00:32:28,828 [Speaker 18]
+Yeah. 
+
+00:32:28,828 --> 00:32:28,828 [Speaker 19]
+Okay. Yeah. So, so a lot more 
+
+00:32:28,828 --> 00:32:28,828 [Speaker 18]
+[laughs] Yeah. 
+
+00:32:28,828 --> 00:32:29,927 [Speaker 19]
+automation is good. 
+
+00:32:29,927 --> 00:32:30,267 [Speaker 18]
+Mm-hmm. Mm-hmm. [footsteps shuffling] 
+
+00:32:30,267 --> 00:32:30,727 [Speaker 19]
+Like, how often does it... 
+
+00:32:30,727 --> 00:32:30,747 [Speaker 18]
+Yeah. 
+
+00:32:30,747 --> 00:32:30,947 [Speaker 19]
+Well, my alarm is going to sound. 
+
+00:32:30,947 --> 00:32:31,187 [Speaker 18]
+Oh. 
+
+00:32:31,187 --> 00:32:34,587 [Speaker 19]
+So, I just have to put in this one here. 
+
+00:32:34,587 --> 00:32:34,687 [Speaker 19]
+Because it's 3:00. 
+
+00:32:34,687 --> 00:32:34,807 [Speaker 18]
+Yeah. Okay. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+But I think it's not recording. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Yeah. Yeah. Friendly AI 1. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Friendly AI 2. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+Friendly AI 2. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Okay. Friendly AI 3. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Yeah. Friendly AI 4. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+I don't think we have to close anything because it's a no code. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Oh, okay. Yeah. Because it's... All of these are no code tools, right? 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 15]
+Oh. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+So if you have to use them, they're not as bad. Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+They're just that new. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Yeah. But the PR 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 20]
+[sneezes] 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+with people, which is probably gonna be much simpler if you don't even have it, like, make PR comments and stuff. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+And you have to, like... Like, you'll take time. Just close that. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Because it's... And also, when you use integrations all day long, Hyperlapse, I don't know what that is. You get, like, so many 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 21]
+[sneezes] 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+integrations. Right? Yeah. Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+Now I'm gonna go. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Yeah. Yeah, that's an option. I think... I didn't think you are... What exactly do you do? 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 21]
+Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Yeah. My hand. Yeah. From the edge. Yeah, yeah, but like, from the other end. Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+From the edge is... Okay, the Hugging Face clone, cloning is from the edge. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+It's inside. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+DAFT is image data processing. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 18]
+Yeah. 
+
+00:32:34,807 --> 00:32:34,807 [Speaker 19]
+We get a semantic of Weaviate search, right? 
+
+00:32:34,807 --> 00:32:34,867 [Speaker 18]
+Yeah, Weaviate search. There's a couple more 
+
+00:32:34,867 --> 00:32:34,867 [Speaker 19]
+There's, like, so many of these companies with Weaviate. There's Elasticsearch, which does vector databases as well. 
+
+00:32:34,867 --> 00:32:34,867 [Speaker 18]
+Yeah. 
+
+00:32:34,867 --> 00:32:34,867 [Speaker 19]
+I don't know how they're competing. Maybe it's just, like, the same source. [footsteps shuffling] 
+
+00:32:34,867 --> 00:32:34,867 [Speaker 18]
+Yeah. Hypermode to complete agents. 
+
+00:32:34,867 --> 00:32:39,947 [Speaker 19]
+I think we can host something. We can deploy an app and then Hypermode can just come back- 
+
+00:32:39,947 --> 00:33:05,087 [Speaker 15]
+All right, everyone. 
+
+00:33:05,087 --> 00:33:05,227 [Speaker 19]
+Hold everything. 
+
+00:33:05,227 --> 00:36:57,127 [Speaker 15]
+My name is Priyan. I'm an AI engineer and dev rel at Arize. Arize is a observability and evals platform for your LLM applications or agent applications. So just to give you guys a little bit of context, um, bad LLM responses do lead to real business impact. These are some funny examples. Uh, I think the one on the left is pretty funny. Uh, someone asked Google, uh, someone says... Someone Googles, "Cheese not sticking to pizza," and it just tells them to put some glue on it. So, um, yeah if, if you want to improve your LLM outputs, if you want to iterate over different prompts, if you want to, um, evaluate your output and see what's actually leading to that output in your application and improve that over time, you should use Arize. So Arize is deployed at some of the world's top enterprises. Um, so today I'm gonna be showing you guys... Uh, or a lot of what I'm gonna be showing you guys is Phoenix, which is our open source platform. Um, we also have an enterprise platform called Arize, um, which has more features, but, uh, Phoenix has a lot of features as well, which is what I'm gonna be showing you guys. So-
+
+00:36:58,315 --> 00:37:07,235 [Speaker 22]
+Um, let's say you have an, uh, an application and you're using LangChain. So if I, um... 
+
+00:37:07,235 --> 00:37:26,135 [Speaker 22]
+Basically, um, if you guys are familiar with OpenTelemetry, it's, it's a, um, it's a package that allows you to trace LLM and AI applications specifically. So if we open this one trace, this is a, uh, LangChain application, and basically what it does is you can enter queries into an e-commerce, um- 
+
+00:37:26,135 --> 00:37:26,715 [Speaker 23]
+[clears throat] 
+
+00:37:26,715 --> 00:41:07,655 [Speaker 22]
+... like, sort of application, and it'll give you a na- natural language results. And if you're using LangChain and, uh, you, uh, like wrote down all your code, what you would see is just this input and output at the top right here. Input, "Find me a tablet for entertainment," and the output would be that tablet. But you wouldn't actually know what has gone into that, what is actually leading to that output so you can improve your output over time. So if you look over here, um, on this left, uh, bar, this shows you all the different, uh, things that are going into this output. The first thing, um, is this, uh, open A- uh, OpenAI call, and you can see it results in this output for, uh, to call the product search tool. The product search tool with, with, um, the parameters query tablet, category entertainment, which, uh, corresponds with the query. And y- you can see here, this is the first tool call. Um, and you can see the input, uh, which is, uh, passed incorrectly. But the output, it says, "Error invalid category entertainment. Must be one, uh, must be one of electronics, home and kitchen, apparel, or sports and outdoors." And so this goes back, um, to, um, the LLM, and you can see here, the LLM, um, the LLM sees this, and, um, it results in another tool call, which, um, it has changed the category from entertainment to electronics. So when in this next tool call, it's going to be using electronics, and, uh, in your final, uh, uh, LLM output, [taps desk] you're going to see, um, the output. But you would have no idea that that's how you got to that output unless you traced it and viewed those traces in Phoenix. So adding these traces is just sort of like the, uh, entry into all the different, uh, features in Phoenix and Arize. So let me go... Let me show you guys a different example. [papers rustling] So this is an application specifically for retrieval, as you can see here. This is your, uh, the retrieval [taps desk] application traced. Um, right here you can see... [taps desk] Um, so, uh, again, you would probably just use input and output, but, um, with this tracing, you can see what was actually retrieved, um, from like all your data. And another thing you can do is you can add an evaluation on this retrieval, which evaluates how relevant your retrieval is to your query. So for example, here we have this evaluation that has a score of zero, it's li- it's like zero or one, um, for your relevance. And which means that your output is actually not, uh... Or the data that was retrieved is not actually relevant to your query. And, uh, you have other, uh, evaluations as well you can add. For example, this hallucination eval, and, um, this Q&A correctness eval. So, um, Q&A correctness, uh, says, you know, um, whether your output was correct or not. And as... Because, um, you know, the data that was retrieved was not relevant, the answer was wrong. So these are the different types of evals you can add upon your application. And you can basically view these evals, and you can improve your application, and you can view the results in these evals. And, um, there's more features as well. Um, for example, um, one thing that, um, is pretty cool is, uh, something called Prompt Playground. Basically, how it works is, so this- this is- this is another, um, application that's using LangGraph. And let's say, um... Basically, what it- what it's for is it's to write like a research paper, and it's using an orchestrator framework, um, pattern, which is like, it's going to delegate different, um, different LLMs to do different things. So you can see here, it's delegated six different subsection writers to write different subsections of the report. So let's say we go into a specific open A- uh, OpenAI call. Um, you can press Playground. 
+
+00:41:07,655 --> 00:41:45,435 [Speaker 22]
+And what you can do here is you can, uh, fiddle around with this prompt, and you can see how it would actually impact your output. And so this allows you to, um, you know, uh, fiddle around and improve your LLM outputs within the application... I mean, within the, uh, Phoenix platform itself. Um, there's a lot of different... Um, uh, there's like ma- many more features as well. [papers rustling] Um, let me show you guys. Um, this- this is Arize. This is the... Um, uh, the enterprise, uh, platform has a bit more features. So for example, um, if we, um... Let's see. 
+
+00:41:45,435 --> 00:41:52,455 [Speaker 22]
+So if we go here, this is another like, uh, trace, for, uh, another application. And if you see here, 
+
+00:41:52,455 --> 00:42:27,035 [Speaker 22]
+you can see like a visual graph of, um... Honestly, I- I guess it's not too clear, but, um, you can see a visual graph of like your whole, like, um, pattern, uh, your whole framework and all the different aspects. For example, this has... It starts with a query, it has some retrieval, um, there's an embedding model, um, an LLM call, all these different things you can visualize. Um, you can also do something, uh, called experiments. So you can upload a dataset. So for example, here I've uploaded a- a simple dataset called Movies. If you wanna look into this dataset, all- all it has is, um, 
+
+00:42:27,035 --> 00:42:35,755 [Speaker 22]
+a bunch of descriptions of a movie. And essentially we're going to be asking the LLM to guess the movie from the description. 
+
+00:42:35,755 --> 00:42:41,055 [Speaker 22]
+So, um, what you can do is you can create an experiment. 
+
+00:42:41,055 --> 00:42:45,235 [Speaker 22]
+And basically here, what you can do is you can... Uh, 
+
+00:42:45,235 --> 00:42:53,395 [Speaker 22]
+like what I was talking about before for Phoenix, um, you can do something similar where you iterate over different prompts. So if I go here and say...
+
+00:43:04,663 --> 00:43:11,983 [Speaker 24]
+So this is our data set, and we're going to, um, run... 
+
+00:43:11,983 --> 00:43:13,603 [Speaker 24]
+Um, 
+
+00:43:13,603 --> 00:43:51,064 [Speaker 24]
+yeah. So here you can see your outputs for, um, your data set, uh, with these different prompts. You can also add an evaluation on top of this as well. So let's add an evaluation. Um, basically, it's gonna evaluate your outputs. Um, and let's say we want to do... Those are, see, these are some, like, preset evals. For example, like, let's say your application is generating SQL queries, 'cause an SQL generation eval. Um, if you wanna evaluate, uh, let's say a bunch of tools are calling. Let's say you wanna evaluate how, um, whether the correct tool was called, there's a tool calling eval. And so, for example, here we can add hallucination. Um, 
+
+00:43:51,064 --> 00:43:52,883 [Speaker 24]
+and 
+
+00:43:52,883 --> 00:43:56,584 [Speaker 24]
+we have to change this to input. 
+
+00:43:56,584 --> 00:44:20,643 [Speaker 24]
+That should be good. And that's what we came up with a few ideas. 
+
+00:44:20,643 --> 00:44:20,823 [Speaker 25]
+Mm-hmm. 
+
+00:44:20,823 --> 00:44:23,943 [Speaker 24]
+So, if you wanna do, like, something like medical field, you can 
+
+00:44:23,943 --> 00:44:24,923 [Speaker 26]
+So, if you run this, uh, eval, and, um- 
+
+00:44:24,923 --> 00:44:29,443 [Speaker 24]
+Just take a bunch of, uh, medical documents, dump it, do semantic search on them. Command K, quick look ups. 
+
+00:44:29,443 --> 00:44:29,943 [Speaker 26]
+Let's, let's see. Shut this down. 
+
+00:44:29,943 --> 00:44:31,743 [Speaker 24]
+Give you something in, like, fintech space, right? 
+
+00:44:31,743 --> 00:44:31,763 [Speaker 26]
+Oh, yeah. That's right. Yeah. 
+
+00:44:31,763 --> 00:44:33,643 [Speaker 24]
+Financial documents, like tax returns, because that's all. 
+
+00:44:33,643 --> 00:44:37,183 [Speaker 26]
+So you can see it's, it's basically running the evaluator on the outputs. It's just giving you seconds. 
+
+00:44:37,183 --> 00:44:47,043 [Speaker 24]
+And we can connect them to, like, banks for loans or, like, financial services that they want. And in this case, we can recommend medications, right? Depending on their situation. 
+
+00:44:47,043 --> 00:44:51,123 [Speaker 26]
+And you can see here that, uh, we can do, like, 100% of the outputs were factual. It's not hallucination. 
+
+00:44:51,123 --> 00:44:52,963 [Speaker 24]
+Just do, like, an interview, job, job searching. 
+
+00:44:52,963 --> 00:44:55,343 [Speaker 26]
+So, I know I, I showed you guys a lot of different features. Um- 
+
+00:44:55,343 --> 00:44:55,863 [Speaker 24]
+You can show them some features. We'll create, like, a training program for you. 
+
+00:44:55,863 --> 00:44:57,103 [Speaker 26]
+In summary, uh- 
+
+00:44:57,103 --> 00:44:57,123 [Speaker 24]
+Yeah 
+
+00:44:57,123 --> 00:44:59,623 [Speaker 26]
+... Arize and Phoenix is a platform with a lot of different, uh- 
+
+00:44:59,623 --> 00:44:59,723 [Speaker 24]
+Yeah 
+
+00:44:59,723 --> 00:45:02,043 [Speaker 26]
+... features that allow you to improve your LM outputs. 
+
+00:45:02,043 --> 00:45:02,503 [Speaker 24]
+Two different ways you can- 
+
+00:45:02,503 --> 00:45:05,363 [Speaker 26]
+View, um, all your different LM calls- 
+
+00:45:05,363 --> 00:45:05,603 [Speaker 24]
+One thing is 
+
+00:45:05,603 --> 00:45:05,643 [Speaker 15]
+That one seems 100% correct. Yeah, yeah 
+
+00:45:05,643 --> 00:45:26,343 [Speaker 26]
+... and your agent frameworks and what's going on, actually, what's actually going on inside that and evaluate your outputs on top of it. Thank you. So, pitch it back. Please, please, please pitch so much. Those were some amazing lightning talks. Give a round of applause for everyone. That might work. Speech to 
+
+00:45:26,343 --> 00:45:32,763 [Speaker 15]
+Yes. Yes, yes. 
+
+00:45:32,763 --> 00:45:35,343 [Speaker 15]
+Not just me. 
+
+00:45:35,343 --> 00:45:39,483 [Speaker 15]
+Maybe you can give them feedback. Okay, yeah. [laughs] 
+
+00:45:39,483 --> 00:46:19,543 [Speaker 25]
+Okay, uh, I would like to remind you everyone, there are seven prizes today. Uh, so you need to still go to Hacker Squad and register for those. And we would like to see all your developer feedback and you registering for the community diaries over there. Also, if you are looking for a team, uh, you can join, uh, the Discord server, and where you will join the amazing community, and can find a teammate for today and share your ideas. Also, we would e-end this presentation today, and you can connect with us, uh, Adam, me, and Tim. 
+
+00:46:19,543 --> 00:46:21,323 [Speaker 15]
+Sorry, hold on. Stay here with me. 
+
+00:46:21,323 --> 00:46:21,343 [Speaker 26]
+Yes. 
+
+00:46:21,343 --> 00:46:28,663 [Speaker 15]
+Uh, so yeah, Vishal has been an amazing member of the community, and Tim over here has also been incredibly helpful. Uh, and also, where's Nihal at? 
+
+00:46:28,663 --> 00:46:29,483 [Speaker 26]
+He's around. 
+
+00:46:29,483 --> 00:46:39,863 [Speaker 15]
+Nihal's been helping out a bunch too, so yeah, give all the volunteers who've been helping out and helping the past few events a huge round of applause. 
+
+00:46:39,863 --> 00:47:13,743 [Speaker 15]
+Like Vishal mentioned, we'd love to connect with you on the Discord. We have, um, someone in New York. His name's Varun, and he's basically, um, managing the Discord. There's a bunch of different channels. There's a hack night channel. There is a team finding channel. Um, he's there. His, uh, his handle is Cheems. Uh, when you log in, just introduce yourself. He'll be around. If you have questions, um, he'll direct you to this, to the different speakers. And if you're from one of the companies, uh, also connect. Also let me know what your handle is so that I can make sure to tag you as a o- like, with the right role. Your hand up for- 
+
+00:47:13,743 --> 00:47:14,583 [Speaker 27]
+Expired. 
+
+00:47:14,583 --> 00:47:25,363 [Speaker 15]
+This expired? Oh, nice. Thank you for letting me know. I will update this, and I will post this, I'll blast this into the Luma so that you can all find it, okay? Uh, let me hand this over back to Vishal to close it up and- 
+
+00:47:25,363 --> 00:47:26,043 [Speaker 26]
+No. Yeah, now you can close it. 
+
+00:47:26,043 --> 00:47:32,223 [Speaker 15]
+All right, let's, uh, let's get hacking, guys. Thank you so much. We'll see you soon. 7:45, we'll come back here and we'll get it going. 
+
+00:47:32,223 --> 00:47:34,803 [Speaker 26]
+You guys ready? 
+
+00:47:34,803 --> 00:47:53,703 [Speaker 26]
+I don't know if there's a limit, but I guess we can all just... 
+
+00:47:53,703 --> 00:47:54,503 [Speaker 26]
+Start-ups mode, right? 
+
+00:47:54,503 --> 00:47:54,843 [Speaker 15]
+Yeah, yeah. 
+
+00:47:54,843 --> 00:47:55,963 [Speaker 26]
+You have to get invited to that. 
+
+00:47:55,963 --> 00:47:56,603 [Speaker 15]
+Yeah. 
+
+00:47:56,603 --> 00:47:57,343 [Speaker 26]
+Did you get invited? 
+
+00:47:57,343 --> 00:47:57,583 [Speaker 15]
+Yeah. 
+
+00:47:57,583 --> 00:47:58,343 [Speaker 26]
+You did? 
+
+00:47:58,343 --> 00:47:58,763 [Speaker 15]
+Yeah. 
+
+00:47:58,763 --> 00:48:03,263 [Speaker 26]
+Wait, that's crazy, dude. I, I was about to sign up, but then I, I, I lost it. 
+
+00:48:03,263 --> 00:48:06,963 [Speaker 15]
+I just got an email. I had a meeting. 
+
+00:48:06,963 --> 00:48:08,403 [Speaker 26]
+After school at Zo? 
+
+00:48:08,403 --> 00:48:09,083 [Speaker 15]
+Yeah. 
+
+00:48:09,083 --> 00:48:11,063 [Speaker 26]
+Wait, is this... This is a after party. 
+
+00:48:11,063 --> 00:48:13,703 [Speaker 15]
+This is, uh, yeah. It's like a, like, I guess- 
+
+00:48:13,703 --> 00:48:15,363 [Speaker 26]
+It's, it's an app. It's a YCN. 
+
+00:48:15,363 --> 00:48:17,843 [Speaker 15]
+So, do 
+
+00:48:17,843 --> 00:48:20,943 [Speaker 15]
+you want to join the Discord I updated this morning. 
+
+00:48:20,943 --> 00:48:25,703 [Speaker 26]
+Yeah, yeah. It's like, but also they, they were specifically looking for people with, like, master's or PhD. 
+
+00:48:25,703 --> 00:48:35,423 [Speaker 15]
+No, no. They were, like, they were, like, looking for people who has already some start-up experience. Already they will get a start-up fail or how they will 
+
+00:48:35,423 --> 00:48:37,483 [Speaker 26]
+Yeah, yeah. Target them. 
+
+00:48:37,483 --> 00:48:37,803 [Speaker 15]
+Yeah. 
+
+00:48:37,803 --> 00:48:39,603 [Speaker 26]
+All right, you guys wanna find this place? 
+
+00:48:39,603 --> 00:48:48,623 [Speaker 15]
+Yeah. Let's find a table maybe. 
+
+00:48:48,623 --> 00:49:05,823 [Speaker 26]
+Hopefully there is, hopefully there is space. 
+
+00:49:05,823 --> 00:49:11,683 [Speaker 15]
+Yeah. Some people will be asking these questions. There's 
+
+00:49:11,683 --> 00:49:13,543 [Speaker 15]
+like bag and then like 
+
+00:49:13,543 --> 00:49:25,163 [Speaker 26]
+I think we're out of tables. 
+
+00:49:25,163 --> 00:49:29,183 [Speaker 15]
+It's okay, we can just find another story. 
+
+00:49:29,183 --> 00:49:31,963 [Speaker 26]
+But, yeah, I would love to come to the 
+
+00:49:31,963 --> 00:49:37,163 [Speaker 15]
+Do you want us to try a different table? 
+
+00:49:37,163 --> 00:49:47,403 [Speaker 26]
+Yeah. This is their food. 
+
+00:49:47,403 --> 00:49:47,803 [Speaker 15]
+Yeah. 
+
+00:49:47,803 --> 00:49:56,163 [Speaker 26]
+Yeah, yeah. [laughs] 
+
+00:49:56,163 --> 00:49:59,823 [Speaker 26]
+Honestly, I mean, we can just, uh- 
+
+00:49:59,823 --> 00:49:59,943 [Speaker 15]
+Do you have any space? 
+
+00:49:59,943 --> 00:50:01,403 [Speaker 26]
+You can just stand at the other table and 
+
+00:50:01,403 --> 00:50:03,543 [Speaker 15]
+It's great. It's always 
+
+00:50:03,543 --> 00:50:05,803 [Speaker 26]
+... once we have a 
+
+00:50:05,803 --> 00:50:09,063 [Speaker 26]
+table. Okay, we can just plant stuff here. 
+
+00:50:09,063 --> 00:50:09,203 [Speaker 15]
+Yeah. 
+
+00:50:09,203 --> 00:50:18,883 [Speaker 26]
+Is it okay if we sit down? I don't know. I don't have a problem with 
+
+00:50:18,883 --> 00:50:25,923 [Speaker 15]
+I 
+
+00:50:25,923 --> 00:50:29,263 [Speaker 15]
+think they're German. 
+
+00:50:29,263 --> 00:50:29,823 [Speaker 26]
+Yeah. But anyways, so we're going to be talking about the future of AI.

@@ -16,7 +16,7 @@ for idx, seg in enumerate(chunks):
 df = daft.from_pydict(rows)           # keeps things tidy for later ETL
 
 # --- 3. upsert & query ---
-w = weaviate.connect_to_wcs("https://YOUR.wcs.api.weaviate.io", auth_api_key="WEAVIATE_KEY")
+w = weaviate.connect_to_wcs("https://y0xrqtdnseqitmbe2lcota.c0.us-west3.gcp.weaviate.cloud/", auth_api_key="WEAVIATE_KEY")
 col = w.collections.get_or_create(
         name="Transcript",
         properties={"text":"text", "start":"number", "end":"number"},
