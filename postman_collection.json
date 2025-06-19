@@ -1,0 +1,207 @@
+{
+  "info": {
+    "name": "SpeakSeek API",
+    "description": "API collection for SpeakSeek - Audio Transcription and Q&A",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Upload Audio",
+      "description": "Upload an audio file for transcription and vectorization",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8000/upload-audio",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "upload-audio"
+          ]
+        },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "description": "Audio file to transcribe (.mp3, .wav, etc.)"
+            },
+            {
+              "key": "conversation_name",
+              "type": "text",
+              "description": "Name for the conversation",
+              "value": "Sample Meeting"
+            }
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "Successful Upload",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/upload-audio",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "upload-audio"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Audio file to transcribe"
+                },
+                {
+                  "key": "conversation_name",
+                  "type": "text",
+                  "value": "Sample Meeting"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\"conversation_id\": \"Sample_Meeting_abc12345\", \"status\": \"success\", \"message\": \"Audio uploaded, transcribed, and vectorized successfully\"}"
+        }
+      ]
+    },
+    {
+      "name": "Ask Question",
+      "description": "Ask a question about transcribed audio content",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/ask-question",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "ask-question"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"conversation_id\": \"Sample_Meeting_abc12345\",\n    \"question\": \"What were the key points discussed about the project timeline?\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "Successful Question Response",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8000/ask-question",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "ask-question"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"conversation_id\": \"Sample_Meeting_abc12345\",\n    \"question\": \"What were the key points discussed about the project timeline?\"\n}"
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\"answer\": \"The project timeline discussion highlighted three key points: 1) The development phase will be completed by end of July, 2) Testing will run through August, and 3) Deployment is scheduled for mid-September.\", \"relevant_contexts\": [\"During our meeting we established the timeline for the project. The development phase needs to be completed by the end of July. Then we'll move into testing throughout August, with deployment scheduled for mid-September. This timeline gives us a buffer before the Q4 launch.\"]}"
+        }
+      ]
+    },
+    {
+      "name": "Homepage",
+      "description": "Get the SpeakSeek homepage",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8000/",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            ""
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "Homepage HTML",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                ""
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "text/html; charset=utf-8"
+            }
+          ],
+          "body": "<!DOCTYPE html>\n<html>...</html>"
+        }
+      ]
+    }
+  ]
+}

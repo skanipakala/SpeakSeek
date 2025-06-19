@@ -62,3 +62,35 @@ SpeakSeek is an audio intelligence system that transforms recorded conversations
 git clone https://github.com/your-org/speakseek.git
 cd speakseek
 pip install -r requirements.txt
+
+# Create .env file with your API keys
+cat > .env << EOL
+FRIENDLI_API_KEY=your_friendli_api_key
+FRIENDLI_ENDPOINT_ID=dep2zfjfglqfzjb  # Or your specific endpoint ID
+OPENAI_API_KEY=your_openai_api_key
+EOL
+
+# Run the application
+uvicorn main:app --reload
+```
+
+### Usage
+
+1. Open your browser and navigate to `http://localhost:8000`
+2. Upload an audio file and provide a conversation name
+3. Wait for the transcription and vectorization to complete
+4. Ask questions about the audio content using the chat interface
+
+### API Endpoints
+
+- `POST /upload-audio`: Upload audio file for transcription and vectorization
+  - Form data parameters:
+    - `file`: Audio file (.mp3, .wav, etc.)
+    - `conversation_name`: Name for the conversation
+  - Returns: Conversation ID and status
+
+- `POST /ask-question`: Ask questions about the transcribed audio
+  - JSON body parameters:
+    - `conversation_id`: ID of the conversation
+    - `question`: Question about the audio content
+  - Returns: Answer and relevant context from the audio
